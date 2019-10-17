@@ -1,0 +1,677 @@
+---
+title: "Trabalho de Análise Exploratória de Dados com R"
+author: Alexandre Fonseca, Ana Paula G. dos Santos, Eduardo Kavamoto, Marcelo Costa e Roberta Castro
+date: "16 de setembro de 2019"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '4'
+#   pdf_document:
+#    toc: yes
+#    toc_depth: 4
+---
+```{r setup, include=FALSE}
+# seleciona o diretório de trabalho
+#setwd("~/Documents/Pós graduação/02. Análise exploratória de dados 07-19/Trabalho/dados")
+
+# define saída como virgula
+options(OutDec=",")
+
+# carrega as bibliotecas
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+
+# importacao dos dados
+client <- read_csv2("client.asc")
+disposition <- read_csv2("disp.asc")
+demograph <- read_csv2("district.asc")
+card <- read_csv2("card.asc")
+account <- read_csv2("account.asc")
+loan <- read_csv2("loan.asc")
+permanent_order <- read_csv2("order.asc")
+transaction <- read_csv2("trans.asc")
+
+
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = TRUE,
+	warning = TRUE
+)
+```
+
+
+# Consultoria Expert: Estudo de Caso Czech Bank
+
+## 1 Introdução
+
+O **Czech Bank**, instituição financeira privada da República Tcheca, deseja utilizar as informações arquivadas em seus bancos de dados para conhecer melhor o perfil de seus clientes, promover a melhoria nos serviços prestados e direcionar campanhas de vendas com vistas a rentabilizar a bases de "bons" clientes. 
+
+Para tanto, contratou a **Consultoria Expert** para realizar a análise exploratória de seus dados.
+
+## 2 Objetivo
+
+A análise de dados realizada nesse relatório visa compreender o perfil dos clientes deste banco. Em especial, pretende identificar quem são os bons clientes para que possamos direcionar as campanhas de vendas de produtos bancários, tais como cartão de crédito e empréstimos.
+
+Este estudo utilizou a base de dados fornecida pelo Czech Bank em arquivos formato CSV e recursos da linguagem R, especialmente do tidyverse.
+
+A análise compreendeu as seguintes fases:
+
+* Ajustes e Exploração dos Dados;
+* Análises e Testes de Hipótese.
+
+## 3 Ajustes e Exploração dos Dados
+
+Esta primeira seção é focada no tratamento e análise exploratória dos dados. Para tanto, iniciamos o trabalho carregando as tabelas disponibilizadas pelo Banco: _account, card, client, disposition, demograph, loan, permaent_order e transaction_. Todos os arquivos estão em formato ascii (extensão ".asc") e possuem, como separador de campos, o símbolo “;”. Usaremos o mesmo nome do arquivo para a criação de cada dataframe.
+
+\pagebreak
+### 3.1 Arquivo de dados Account
+
+Iniciamos o tratamento de dados pelo dataframe Account, o qual contém o código da identificação da conta e da localização da filial, bem como a frequência de emissão de extratos e a data de abertura da conta. 
+
+Note que o campo _Frequency_ representa a frequência com que a conta cria extratos para o correntista, a qual pode ser mensal, semanal ou a "cada transação". Traduzimos os termos em tcheco para o inglês a fim de simplicar a visualizacão e o entendimento das informações.
+
+__Conteúdo Original:__
+```{r echo=FALSE}
+#head(account)
+
+unique(account$frequency)
+
+```
+__Conteúdo Traduzido:__
+```{r echo=FALSE}
+# Traduzindo para o inglês (padrão) os valores do campo frequência 
+mutate(account, frequency=if_else(account$frequency == "POPLATEK MESICNE","Monthly",if_else(account$frequency == "POPLATEK TYDNE","Weekly","Per transaction"))) -> account
+
+unique(account$frequency)
+
+```
+
+O formato do campo _date_ foi ajustado para facilitar o entendimento. Em seguida, as contas foram agrupadas por ano e mês, a fim de apresentar seu crescimento ao longo anos.
+
+```{r include=FALSE}
+
+mutate(account, date=ymd(account$date)) -> account
+
+```
+
+Após os ajustes, a tabela ficou assim:
+
+```{r echo=TRUE}
+head(account)
+```
+
+
+É possível perceber as seguintes características das contas, por meio da análise gráfica: 
+
+a) A maior frequência de geração de extratos é a mensal.
+
+```{r echo=FALSE, paged.print=FALSE}
+
+ggplot(data = account) + 
+  geom_bar(mapping=aes(x = frequency, fill=frequency), show.legend=FALSE, color="black") +
+  labs(x = "Freqência", y="Quantidade", x= "Tipo", title = "Frequência de Geração de Extratos")
+ 
+ggplot(account) +
+  geom_bar(mapping=aes(x=year(date), fill=frequency), color="black",position = "dodge")+
+  labs(x = "Ano", y="Quantidade", title = "Frequência de Geração de Extratos", fill="Frequency")
+
+```
+
+b) O maior número de contas ocorreu entre os anos de 1993 e 1996. 
+
+```{r echo=FALSE}
+ggplot(account) +
+  geom_bar(mapping = aes(x=year(date)), color="black", fill="lightblue") +
+  labs(x="Ano", y="Quantidade", title="Contas")
+
+```
+
+\pagebreak
+### 3.2 Arquivo de dados Client
+
+O dataframe _Client_ contém as informações referentes ao código de identificação do cliente, data de aniversário, gênero (masculino ou feminino) e endereço. Note que o campo _district_id_ nesta tabela contém o endereço do cliente, sendo diferente do conceito do campo de mesmo nome na tabela _account_, que contém o código de localização da filial.
+
+Dessa forma, o tratamento dos dados do arquivo _Client_ consistiu em criar uma nova coluna contendo o gênero dos clientes (masculino ou feminino), converter as datas de nascimento para o formato "date" da linguagem R, alterar o nome do campo _district_id_ para _adress_client_ e remover a coluna _birth_number_. 
+
+__Formato Original:__
+```{r echo=FALSE}
+# tratando a tabela Client
+
+head(client)
+
+client %>%
+  mutate(mesajustado = as.numeric(substr(birth_number,3,4)))%>%
+  mutate(sex = if_else(mesajustado > 50, "Female", "Male"))%>%
+  mutate(birth_number = if_else(sex=="Female", birth_number - 5000, birth_number))%>%
+  mutate(birth_date = ymd(paste0("19", as.character(birth_number)))) -> client
+
+
+client <- subset(client, select=-c(birth_number,mesajustado))
+
+```
+__Formato Novo:__
+```{r echo=FALSE}
+head(client)
+```
+
+Observa-se que o Banco não possui clientes jovens, sendo seu público concentrado na faixa de 50 a 70 anos _Feminino_ e _Masculino_, conforme o gráfico abaixo:
+
+```{r echo=FALSE}
+ggplot(client, aes(x = year(Sys.Date()) - year(birth_date))) + 
+  geom_histogram(aes(y=..density..), binwidth = 4, fill="lightblue", color="black")+
+  geom_density(alpha=0.8)+
+  facet_grid(. ~ sex) +
+  ylab("Densidade") + xlab("Idade do Cliente")
+
+```
+
+A distribuição de gênero dos clientes é praticamente igualitária, conforme verifica-se abaixo:
+```{r include=FALSE}
+client %>%
+  group_by(sex) %>%
+  summarise(quantidade=n()) -> prop
+
+mutate(prop, perc=quantidade/sum(quantidade)*100) -> prop
+
+```
+
+```{r echo=FALSE}
+ggplot(data=prop, aes(x=factor(1),y=perc, fill=sex)) +
+  geom_bar(stat="identity") +
+  coord_polar(theta="y") +
+  geom_text(aes(label=paste(round(perc,2),"%")), position=position_stack(vjust=0.5)) +
+  labs(fill="Sex", x="", y="", title="Clientes")
+
+```
+
+
+\pagebreak
+### 3.3 Arquivo de dados Disposition
+
+Este dataframe contém as informações referentes ao código de disposição, identificação do cliente, identificação da conta e o tipo de disposição (dono ou usuário).
+
+Dessa forma, _Disposition_ é basicamente um relacionamento entre correntistas e suas contas bancárias. O aspecto mais interessante é que alguns desses relacionamentos são classificados como _Owner_ (dono), no qual o cliente pode emitir transferências bancárias e pedir empréstimos. Como podemos notar abaixo, a quantidade de __Owner__ é predominante.
+
+```{r include=FALSE}
+disposition %>%
+  group_by(type) %>%
+  summarise(quantidade=n()) -> prop
+
+mutate(prop, perc=quantidade/sum(quantidade)*100) -> prop
+```
+
+
+
+```{r echo=FALSE}
+
+# tratando a tabela Disposition
+head(disposition)
+
+ggplot(data=prop, aes(x="", y=perc, fill=type)) +
+  geom_bar(stat="identity") +
+  coord_polar(theta="y") +
+  geom_text(aes(label=paste(round(perc,2),"%")), position=position_stack(vjust=0.5)) +
+  labs(fill="Type", x="", y="", title="Tipos de Cliente" ) 
+
+
+```
+
+\pagebreak
+### 3.4 Arquivo de dados Permanent Order
+
+Este dataframe possui informações referentes ao código de registro da ordem de transferência, identificação da conta de origem, código do banco destinatário, código da conta de destino, valor transferido e característica do pagamento.
+
+O tratamento de dados do dataframe _Order_ consistiu em traduzir o "Símbolo K" (categorias de ordens) para o inglês, criando a categoria _missing_ para os registros não classificados.
+
+__Conteúdo Original:__
+```{r echo=FALSE}
+#tratando a tabela Order
+head(permanent_order)
+
+unique(permanent_order$k_symbol)
+
+#traduzindo para o inglês (padrão) os valores do campo frequencia e convertendo em tipo "data invertida" o campo date
+permanent_order <- mutate(permanent_order, k_symbol=if_else(k_symbol == "LEASING","Leasing",
+                                                 if_else(k_symbol == "POJISTNE","Insurance",
+                                                 if_else(k_symbol == "SIPO","Household", 
+                                                 if_else(k_symbol == "UVER","Loan","Other"))), "Missing"))
+```
+__Conteúdo Traduzido:__
+```{r echo=FALSE}
+unique(permanent_order$k_symbol)
+
+head(permanent_order)
+```
+
+O gráfico abaixo demonstra a distribuição quantitativa por tipo de pagamento e a ausência dessa informação para número expressivo de registros (valores _missing_).
+
+```{r echo=FALSE}
+ggplot(data=permanent_order) +
+  geom_bar(mapping=aes(x=k_symbol, fill=k_symbol), show.legend = FALSE, color="black") +
+  labs(x="Tipo", y="Quantidade", title="Tipos de Ordem")
+```
+
+\pagebreak
+### 3.5 Arquivo de dados Transaction
+
+O dataframe _Transaction_ é o que apresenta o maior conjunto de dados, com 1.056.320 registros. Contém os dados sobre as transações bancárias, com informações referentes ao código da transação, identificação da conta, data da transação, tipo de transação (crédito ou débito), detalhamento do tipo de transação (cartão de crédito, dinheiro,cobrança de outro banco, retirada em dinheiro ou remessa para outro banco), valor da transação, saldo depois da transação, característica da transação, banco participante e conta participante.
+
+Nessa tabela, foi realizada a conversão do campo "date" para o formato adequado a linguagem R e a tradução do conteúdo dos campos _type_ (tipo de transação), _operation_ (modo da transação) e _k_symbol_  (caracterização da transação) para o inglês. Ressalta-se que os registros nulos dos campos _k_symbol_, _bank_ e _account_ foram preenchidos com o valor _missing_.
+
+__Conteúdo Original:__
+```{r echo=FALSE}
+
+#Conteúdo Original
+
+#Campo Type
+unique(transaction$type)
+#Campo Operation
+unique(transaction$operation)
+#Campo K_Symbol
+unique(transaction$k_symbol)
+head(transaction)
+
+transaction <- mutate(transaction, type=if_else(type == "PRIJEM","Credit","Withdraw"))
+
+transaction %>%
+mutate(operation=if_else(operation == "VYBER KARTOU","Credit card withdrawal",
+                  if_else(operation == "VYBER","Withdrawal in cash",
+                  if_else(operation == "VKLAD","Credit in cash", 
+                  if_else(operation == "PREVOD NA UCET","Remittance to another bank", 
+                  if_else(operation == "PREVOD Z UCTU",
+                    "Collection from another bank","Other")))),
+                    "Missing")) -> transaction
+
+transaction %>%
+  mutate(k_symbol= if_else(k_symbol == "POJISTNE","Insurance payment",
+                    if_else(k_symbol == "SLUZBY","Payment for statement",
+                    if_else(k_symbol == "UROK","Interest credited", 
+                    if_else(k_symbol == "SANKC. UROK","Interest of negative balance", 
+                    if_else(k_symbol == "SIPO","Household",        
+                    if_else(k_symbol == "DUCHOD","Old-age pension",  
+                    if_else(k_symbol == "UVER","Loan payment", "Other")))))),"Missing")) -> transaction
+
+transaction %>%
+  mutate(date=ymd(date)) -> transaction
+
+transaction %>%
+  mutate(operation=if_else(is.na(operation),"missing", operation)) %>%
+  mutate(k_symbol=if_else(is.na(k_symbol),"missing", k_symbol)) %>%
+  mutate(bank=if_else(is.na(bank),"missing",bank)) %>%
+  mutate(account=if_else(is.na(transaction$account),0, transaction$account)) -> transaction
+```
+__Conteúdo Traduzido:__
+```{r echo=FALSE}
+#Conteúdo Traduzido
+
+#Campo Type
+unique(transaction$type)
+#Campo Operation
+unique(transaction$operation)
+#Campo K_Symbol
+unique(transaction$k_symbol)
+
+head(transaction)
+```
+
+
+Observa-se que a maior parte das transações, tanto de crédito quanto de débito, não possuem a característica das transações realizadas, sendo identificadas no gráfico abaixo como _missing_. Entre as transações de crédito identificadas, a mais comum é "juros creditados" e entre as transações de débito, "pagamento de extrato".
+
+```{r echo=FALSE}
+
+ggplot(transaction, aes(x=type, fill=k_symbol))+
+  geom_bar(position=position_dodge(), color="black") +
+  scale_y_continuous( labels=function(x)x/1000 ) +
+  labs(title="Valores por Transação", x="Categoria",y="Quantidade (x 1.000)", fill= "Transaction")
+
+```
+
+
+\pagebreak
+### 3.6 Arquivo de dados Loan
+
+O dataframe _Loan_ (empréstimos) é o que apresenta os empréstimos concedidos aos clientes, contendo informações referentes ao código de registro do empréstimo, identifcação da conta, data, valor emprestado, duração do empréstimo, valor da parcela e situação atual do empréstimo. 
+
+Essa tabela possui informações úteis para ajudar a escolher os correntistas para oferta de cartões de crédito e/ou outros empréstimos. Também é possível identificar bons pagadores e maus pagadores, bem como ver o volume e o tempo médio dos empréstimos. Quanto ao tratamento dos campos, para este dataframe precisamos apenas ajustar as datas para o formato correto ("date").
+
+```{r echo=FALSE}
+#Tratando a tabela Loan
+
+head(loan)
+
+loan <- mutate(loan,date=ymd(date)) 
+
+head(loan)
+```
+
+ 
+```{r include=FALSE}
+loan <- loan %>%
+  mutate(status_d=if_else(status=="A", "Contract finished, no problems",
+                if_else(status=="B","Contract finished, loan not payed",
+                if_else(status=="C","Running contract, OK so far", "Running contract, client in debt"))))
+
+```
+
+Após ajustes:
+```{r echo=FALSE}
+head(loan)
+```
+
+Apresentamos abaixo, um gráfico de pizza com a situação _("status")_ dos empréstimos concedidos. Lembrando que:
+
+* __A__: significa "Contract finished, no problems" (contrato encerrado, sem problemas); 
+
+* __B__: significa "Contract finished, loan not payed" (contrato encerrado, empréstimo não pago); 
+
+* __C__: significa "Running contract, OK so far" (contrato em andamento, sem problemas até o momento); 
+
+* __D__: significa "Running contract, client in debt" (contrato em andamento, cliente em débito). 
+
+```{r echo=FALSE}
+
+loan %>%
+  group_by(status_d) %>%
+  summarize(quantidade = n(), perc=round(quantidade/nrow(loan) * 100,1)) %>%
+  ggplot(aes(x="", y=perc, fill=status_d)) +
+  geom_bar(stat="identity") +
+  coord_polar(theta="y", start=0) +
+  geom_text(aes(label=paste(perc,"%")), position=position_stack(vjust=0.5)) +
+  labs(fill="Status", x="", y="", title="Status Empréstimo" )
+
+
+```
+
+O gráfico a seguir retrata a distribuição das operações em "default" ao longo do período analisado.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+loan %>%
+  dplyr::filter(status=="B" | status =="D") %>%
+  ggplot() +
+  geom_histogram(mapping=aes(x=date), fill="lightblue", color="black") +
+  facet_grid(.~status_d)+
+  labs(title="Empréstimo", x="Ano", y="Quantidade")
+
+
+```
+
+
+\pagebreak
+### 3.7 Arquivo de dados Card
+
+Este dataframe contém informações referentes ao código de identificação do cartão de crédito, código de disposição, tipo de cartão e data de emissão. Apresenta dados sobre os cartões de crédito emitidos e vinculados às contas bancárias. 
+
+Os cartões de crédito podem ser de três tipos: junior, classic e gold. O campo "issued", que determina a data de emissão de um determinado cartão, foi convertido para o formato "date".
+
+```{r echo=FALSE}
+head(card)
+
+#Tratando a tabela Card
+
+card <- mutate(card,issued=ymd(ymd_hms(issued)))
+
+head(card)
+```
+
+Observa-se que a maior parte dos cartões emitidos são da categoria "classic", conforme demonstra o gráfico abaixo: 
+
+```{r echo=FALSE}
+ggplot(card, aes(x=type, fill=type)) +
+  geom_bar(show.legend = FALSE, color="black") +
+  labs (title="Cartão de Crédito", x="Tipo", y="Quantidade", show.legend=FALSE)
+```
+
+O ano de 1998 foi o que apresentou o maior volume em emissões de cartões dos três tipos, destacando-se ainda o cartão classic.
+
+```{r echo=FALSE, paged.print=FALSE}
+card %>%
+  group_by(type, year=year(issued)) %>%
+  summarize(quantidade=n()) %>%
+    ggplot()+
+    geom_line(aes(x=year, y=quantidade, color=type)) +
+    labs(title="Cartão de Crédito", x="Ano", y="Quantidade", color="Type")
+
+```
+
+
+\pagebreak
+### 3.8 Arquivo de dados Demograph
+
+Este dataframe possui informações sobre os distritos onde vivem os clientes e informações sobre os mesmos. É possível realizar a análise de informações como número de habitantes, salário médio, razão de urbanismo, taxa de desemprego, etc.
+
+```{r echo=FALSE}
+#Tratando a tabela demographic
+head(demograph)
+
+#ggplot(demograph, aes(x = A3, y = A4, fill = A3)) + 
+#  geom_bar(stat="identity", position=position_dodge(), show.legend=FALSE) + 
+#  labs(title="Região", x = "", y = "Quantidade Habitantes")
+
+```
+
+## 4 Análises e Testes de Hipótese
+Este capítulo se destina a relatar as relações e correlações, feitas pela Consultoria Expert, nas bases de dados disponibilizadas pelo Banco Czech, com vistas a identificar oportunidades de negócios, bem como os testes de hipóteses para rerratificar as análises.
+
+### 4.1 Relação entre Clientes "Bons Pagadores" e Cartões de Crédito
+Conforme visto no item 3.6, clientes com empréstimos nas situações "A" e "C" são aqueles considerados _bons pagadores_. Portanto, iremos verificar quais são os cartões de crédito utilizados por clientes nesta categoria:
+
+```{r echo=FALSE}
+#Selecionando clientes bons pagadores
+
+acc_ok <- dplyr::filter(loan, status %in% c("A","C"))
+
+client_acc_ok <- inner_join(acc_ok, disposition, by = c("account_id")) %>%
+  filter(type == "OWNER") %>%
+  left_join(card, by = c("disp_id")) %>%
+  mutate(card = ifelse(is.na(type.y),"sem cartão",type.y))%>%
+  inner_join(client, by = c("client_id")) %>%
+  inner_join(account, by = c("account_id")) %>%
+  inner_join(demograph, by = c("district_id.x"="A1")) %>%
+  mutate(idade = 2019 - year(birth_date))
+
+#Agrupando clientes bons pagadores por cartão
+client_acc_ok_group_card <- client_acc_ok %>%
+  group_by(card)%>%
+  summarise(qte_card = n())
+
+#Identificando quais clentes bons pagadores não possuem cartão
+ggplot(client_acc_ok_group_card, aes(x = card, y = qte_card, fill=card)) + 
+  geom_bar(stat="identity", position=position_dodge()) + 
+  ylab("Quantidade Bons Pagadores") + xlab("Tipo de Cartão")
+
+```
+
+Podemos notar que a __maioria__ dos clientes bons pagadores __não possuem cartão de crédito__. Desse modo, uma campanha de venda deste produto direcionada para este público pode significar uma boa oportunidade de negócio.
+Considerando que os clientes bons pagadores apresentam boas oportunidades de negócios a baixo risco, a seguir serão testadas hipóteses com o objetivo de verificar a relação de adimplência/inadimplência com as demais variáveis em análise.
+
+### 4.2 Relação entre Inadimplência e Gênero/Idade
+Enquanto a oferta de produtos para clientes "bons pagadores" apresenta riscos muito baixos, o mesmo critério não se aplica aos clientes inadimplentes. Portanto, a fim de podermos mapear estes riscos, verificamos se há relação estatística entre _Inadimplencia/adimplencia x Gênero/Idade_.
+```{r include=FALSE}
+#Selecionando clientes maus pagadores
+acc_nok <- dplyr::filter (loan, status %in% c("B","D"))
+
+client_acc_nok <- inner_join(acc_nok, disposition, by = c("account_id")) %>%
+  filter(type == "OWNER") %>%
+  left_join(card, by = c("disp_id")) %>%
+  mutate(card = ifelse(is.na(type.y),"sem cartão",type.y))%>%
+  inner_join(client, by = c("client_id")) %>%
+  inner_join(account, by = c("account_id")) %>%
+  inner_join(demograph, by = c("district_id.y"="A1")) %>%
+  mutate(idade = 2019 - year(birth_date))
+
+#Agrupando clientes maus pagadores por genero e idade
+client_acc_nok_group_sex_idade <- client_acc_nok %>%
+  group_by(sex,idade)%>%
+  summarise(qte = n())
+
+#Agrupando clientes bons pagadores por genero e idade
+client_acc_ok_group_sex_idade <- client_acc_ok %>%
+  group_by(sex,idade)%>%
+  summarise(qte = n())
+
+#realizando teste de hipotese por genero e idade
+t.test(client_acc_ok_group_sex_idade$qte, client_acc_nok_group_sex_idade$qte)
+#Existe correlação: p-value < 2.2e-16
+```
+O p-value encontrado foi menor que 5% (__2.2e-16__). Portanto, podemos considerar que __existe__ relação estatística. A seguir, o detalhamento da quantidade de clientes inadimplentes por genêro e idade: 
+
+```{r echo=FALSE}
+
+ggplot(client_acc_nok) +
+  geom_histogram(aes(x = idade, fill = sex), bins = 10, alpha = .7) +
+  facet_wrap(~ sex) +
+  scale_fill_discrete(name = "Gênero") +
+  labs(y = "Quantidade Inadimplentes")
+
+```
+
+Pelo gráfico podemos concluir que, entre as mulheres, a maior inadimplência está na faixa de 45 e na de 75 anos; a menor na faixa de 65 anos. Entre os homens não se observa inadimplência na faixa de 75 anos e o maior volume é na faixa de 80 anos.
+
+### 4.3 Relação entre Clientes "Bons Pagadores" e Regiões 
+Neste item, verificaremos se há relação estatística entre clientes inadimplentes/adimplentes e as regiões da República Tcheca.
+```{r include=FALSE}
+
+#----------------------------------------------------------------------------
+#Obtendo a quantidade de maus pagadores por região
+
+dist_acc_nok <- inner_join(acc_nok, account, by = c("account_id")) %>%
+  inner_join(demograph, by = c("district_id" = "A1"))
+
+dist_acc_nok_group <- dist_acc_nok %>%
+  group_by(A3) %>%
+  summarise(qte = n())
+
+#Obtendo a quantidade de bons pagadores por região
+dist_acc_ok <- inner_join(acc_ok, account, by = c("account_id")) %>%
+  inner_join(demograph, by = c("district_id" = "A1"))
+
+dist_acc_ok_group <- dist_acc_ok %>%
+  group_by(A3) %>%
+  summarise(qte = n())
+
+t.test(dist_acc_ok_group$qte, dist_acc_nok_group$qte)
+```
+Como o p-value é menor que 5% (__6.546e-05__), podemos considerar que __existe__ relação estatística. Portanto, retrata-se a quantidade de clientes inadimplentes/adimplentes por região: 
+
+```{r echo=FALSE}
+
+#Gráfico de de bons pagadores por região
+ggplot(dist_acc_ok_group, aes(x = A3, y = qte, fill = A3)) + 
+  geom_bar(stat="identity", position=position_dodge())+ xlab ("Região") +
+  ylab("Quantidade Bons Pagadores")  +
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) + labs(fill='Região') 
+
+#Gráfico de de maus pagadores por região
+ggplot(dist_acc_nok_group, aes(x = A3, y = qte, fill = A3)) + 
+  geom_bar(stat="identity", position=position_dodge())+ xlab ("Região") +
+  ylab("Quantidade Inadimplentes") +
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) + labs(fill='Região') 
+
+```
+
+```{r include=FALSE}
+dist_acc_ok_praga <- dplyr::filter(dist_acc_ok, A3 == "south Moravia")
+dist_acc_nok_praga <- dplyr::filter(dist_acc_nok, A3 == "south Moravia")
+
+count(dist_acc_ok_praga)
+count(dist_acc_nok_praga)
+```
+
+Os gráficos acima mostram que __South Moravia__ é a região que mais concentra __bons pagadores (116)__, em que pese também concentrar a segunda maior parte dos __maus pagadores (13)__. No entanto, a quantidade de maus pagadores não é relevante em relação ao total.
+
+Além disso, observa-se que a região de South Moravia é a segunda __mais habitada__ (embora não tenha uma das maiores médias salariais).
+
+```{r echo=FALSE}
+#Tratando a tabela demograph
+
+ggplot(demograph, aes(x = A3, y = A4, fill = A3)) + 
+  geom_bar(stat="identity", position=position_dodge()) + xlab ("Região") +
+  ylab("Habitantes por Região") +
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) + labs(fill='Região') 
+
+ggplot(demograph, aes(x = A3, y = A11, fill = A3)) + 
+  geom_bar(stat="identity", position=position_dodge())+xlab ("Região") +
+  ylab("Média Salarial") +
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) + labs(fill='Região') 
+
+```
+
+Por essas razões, consideramos a região de __South Moravia__ como um local propício para a captação de __novos clientes__ e __oferecimento de produtos__ aos já existentes.
+
+### 4.4 Relação entre Clientes "Bons Pagadores" e Média Salarial
+Nesta seção, foi realizado o teste de hipótese com o objetivo de verificar se existe relação entre média salarial e a adimplência/inadimplência dos clientes. Uma vez que o resultado do p-value foi alto (__0.955__), não é possível afirmar que existe relação entre média salarial e bons pagadores. 
+
+```{r include=FALSE}
+dist_med_sal_acc_ok_group <- dist_acc_ok %>%
+  group_by(A3) %>%
+  summarise (average = mean(A11))
+
+dist_acc_ok
+
+dist_med_sal_acc_ok_group
+
+dist_med_sal_acc_nok_group <- dist_acc_nok %>%
+  group_by(A3) %>%
+  summarise (average = mean(A11)) 
+
+t.test(dist_med_sal_acc_ok_group$average, dist_med_sal_acc_nok_group$average)
+```
+
+## 5 Conclusões e Recomendações
+
+A Consultoria Expert foi contratada para avaliar as bases de dados do Banco Czech com o objetivo de identificar oportunidades de negócio.
+
+Dessa forma, uma vez que maior parte dos clientes considerados "bons pagadores" não possuem o cartão de crédito do Banco Czech, a primeira sugestão da Consultoria Expert é priorizar o atendimento e a oferta de cartões a esses clientes.
+
+Observa-se que o Banco Czech possui baixo _Market Share_ em todas as regiões da República Tcheca (em South Moravia, é de apenas 0,045%.), o que representa outra grande oportunidade de negócio, ou seja, expandir sua base de clientes é a segunda sugestão da Consultoria Expert.
+
+```{r include=FALSE}
+
+#sumariza população por distrito
+
+client_district <- client %>%
+  group_by(district_id) %>%
+  tally()
+
+A_client_district <- merge(x=client_district, y=demograph, by.x="district_id", by.y="A1", all.x=TRUE)
+
+#sumariza clientes por regiao
+
+client_region <- aggregate(A_client_district$n, by=list(A3=A_client_district$A3), FUN=sum)
+
+#sumariza população por regiao
+
+popul_region <- aggregate(demograph$A4, by=list(A3=demograph$A3), FUN=sum)
+
+#percentual de clientes por regiao
+
+cli_pop_region <- merge(x=client_region, y=popul_region, by="A3", all.x=TRUE) %>%
+  mutate(perc = x.x*100/x.y)
+
+#Market Share de Praga
+dplyr::filter(cli_pop_region, A3 =="south Moravia")
+```
+
+```{r echo=FALSE}
+ggplot(cli_pop_region, aes(x = A3, y = perc, fill = A3)) + 
+  geom_bar(stat="identity", position=position_dodge())+xlab ("Região") +
+  ylab("Market Share (%)") +
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) + labs(fill='Região') 
+```
+
+Em se tratando da expansão da base de clientes, orientamos priorizar a região de South Moravia, por ser a que mais concentra clientes "bons pagadores" e é a segunda região mais habitada da República Tcheca.
+
+Como não foi identificada relação entre a média salarial da região e o fato de os clientes serem "bons pagadores", não é considerado como impedimento, para a  ampliação de negócios, a região de South Moravia não concentrar as maiores rendas médias salariais da República Tcheca.
+
+A Consultoria Expert entende que a melhor forma de ampliar rapidamente a base de clientes (e com menor custo de incremento dessas oportunidades de negócios) é a priorização por regiões por meio de marketing local e direcionado.
+
+Por fim, como oportunidade de melhoria, sugerimos ajustar os sistemas, que geram informações para os dataframes "Order" e "Transaction", sobre as transações realizadas pelos clientes, com vistas a reduzir/eliminar a quantidade de campos não preenchidos ("missing"). A ausência dessas informações foi um limitador para as análises realizadas pela Consultoria Expert e podem comprometer as conclusões.
